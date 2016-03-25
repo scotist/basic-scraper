@@ -3,6 +3,7 @@ import io
 import sys
 from bs4 import BeautifulSoup
 import re
+import geocoder
 
 INSPECTION_DOMAIN = 'http://info.kingcounty.gov'
 INSPECTION_PATH = '/health/ehs/foodsafety/inspections/Results.aspx'
@@ -24,6 +25,14 @@ INSPECTION_PARAMS = {
     'Fuzzy_Search': 'N',
     'Sort': 'H'
 }
+
+
+def get_geojson(result):
+    address = " ".join(result.get('Address', ''))
+    if not address:
+        return None
+    geocoded = geocoder.google(address)
+    return geocoded.geojson
 
 
 def get_inspection_page(**kwargs):
@@ -118,22 +127,28 @@ def extract_score_data(elem):
     return data
 
 
-if __name__ == 'main':
+def generate_results(test=False, count=10):
     kwargs = {
         'Inspection_Start': '2/1/2013',
         'Inspection_End': '2/1/2015',
-        'Zip_Code': '98019'
+        'Zip_Code': '98109'
     }
-    fh = 'inspection_page.html'
-    if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    if test:
         html, encoding = load_inspection_page('inspection_page.html')
     else:
         html, encoding = get_inspection_page(**kwargs)
     doc = parse_source(html, encoding)
-    print doc.prettify(encoding=encoding)
     listings = extract_data_listings(doc)
     for listing in listings:
         metadata = extract_restaurant_metadata(listing)
         score_data = extract_score_data(listing)
-        for key, value in score_data.items():
-            print(key, value)
+        metadata.update(score_data)
+        yield metadata
+
+
+if __name__ == 'main':
+    import pprint
+    test = len(sys.argv) > 1 and sys.argv[1] == 'test'
+    for result in generate_results(test):
+        geo_result = get_geojson(result)
+        pprint.pprint(geo_result)
